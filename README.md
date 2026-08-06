@@ -187,4 +187,4 @@ This image is built from and depends on:
 - [Universal Blue image-template](https://github.com/ublue-os/image-template)
 - [bootc](https://github.com/bootc-dev/bootc)
 
-Pantum driver files remain subject to the vendor's applicable terms. This repository is maintained for personal use and comes without warranty or official support from Bazzite, Universal Blue, Fedora, Pantum, or the other upstream projects.
+Pantum driver files remain subject to the vendor's applicable terms. This repository is maintained for personal use and comes without warranty or official support from Bluefin, Universal Blue, Fedora, Pantum, or the other upstream projects.
