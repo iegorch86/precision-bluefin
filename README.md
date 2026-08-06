@@ -1,18 +1,18 @@
-# Family Bazzite
+# Precision Bluefin
 
-[![Build signed family Bazzite image](https://github.com/iegorch86/family-bazzite/actions/workflows/build.yml/badge.svg)](https://github.com/iegorch86/family-bazzite/actions/workflows/build.yml)
+[![Build signed precision Bluefin image](https://github.com/iegorch86/precision-bluefin/actions/workflows/build.yml/badge.svg)](https://github.com/iegorch86/precision-bluefin/actions/workflows/build.yml)
 
-A personal, signed Bazzite GNOME image for the family desktop.
+A personal, signed Bluefin image for my workstation.
 
-This is not a general-purpose distribution or an official Bazzite/Universal Blue image. It is a small set of reproducible customizations layered on top of the current stable Bazzite GNOME image.
+This is not a general-purpose distribution or an official Bluefin/Universal Blue image. It is a small set of reproducible customizations layered on top of the current stable Bluefin Nvidia image.
 
 ## Image
 
 ```text
-ghcr.io/iegorch86/family-bazzite:stable
+ghcr.io/iegorch86/precision-bluefin:stable
 ```
 
-The image targets a normal AMD/Intel Bazzite GNOME desktop. It is not an NVIDIA-specific image.
+The image targets an NVIDIA-specific Bluefin image.
 
 ## Included customizations
 
@@ -69,10 +69,10 @@ This is the native Fedora virtualization stack, not a Flatpak installation.
 
 ## Switching to the image
 
-From an existing Bazzite or compatible bootc system:
+From an existing Bluefin or compatible bootc system:
 
 ```bash
-sudo bootc switch ghcr.io/iegorch86/family-bazzite:stable
+sudo bootc switch ghcr.io/iegorch86/precision-bluefin:stable
 sudo systemctl reboot
 ```
 
@@ -91,7 +91,7 @@ Each successful build publishes several tags:
 | Tag | Purpose |
 | --- | --- |
 | `stable` | Current recommended image |
-| `upstream-<release>` | Marker for the matching Bazzite stable release |
+| `upstream-<release>` | Marker for the matching Bluefin stable release |
 | `stable-YYYYMMDD` | Build date |
 | `stable-<git-sha>` | Source revision |
 | `stable-YYYYMMDD-<git-sha>` | Date and source revision |
@@ -107,9 +107,9 @@ stable-20260804-d4c5249
 
 The GitHub Actions workflow:
 
-1. Inspects the current `ghcr.io/ublue-os/bazzite-gnome:stable` image.
+1. Inspects the current `ghcr.io/ublue-os/precision-bluefin:stable` image.
 2. Resolves its exact digest and version.
-3. Confirms that the stable Bazzite GitHub release and image version agree.
+3. Confirms that the stable Bluefin GitHub release and image version agree.
 4. Pins the build to that exact upstream digest.
 5. Builds and runs `bootc container lint`.
 6. Rechunks the image for more resumable updates.
@@ -118,7 +118,7 @@ The GitHub Actions workflow:
 
 A scheduled check runs daily at 12:15 UTC. It skips rebuilding when the corresponding `upstream-<release>` marker already exists.
 
-Pushes to `main`, pull requests, and manually dispatched runs use the current stable Bazzite digest. Markdown-only changes are excluded from automatic image builds.
+Pushes to `main`, pull requests, and manually dispatched runs use the current stable Bluefin digest. Markdown-only changes are excluded from automatic image builds.
 
 ## Signature verification
 
@@ -129,7 +129,7 @@ With Cosign installed, verify the published image with:
 ```bash
 cosign verify \
   --key cosign.pub \
-  ghcr.io/iegorch86/family-bazzite:stable
+  ghcr.io/iegorch86/precision-bluefin:stable
 ```
 
 The private `cosign.key` must never be committed. GitHub Actions receives it through the repository secret named `SIGNING_SECRET`.
@@ -147,7 +147,7 @@ Build the image locally with rootful Podman:
 ```bash
 sudo podman build \
   --pull=newer \
-  --tag family-bazzite:test \
+  --tag precision-bluefin:test \
   --file Containerfile \
   .
 ```
@@ -157,7 +157,7 @@ Confirm that the main native virtualization packages are present:
 ```bash
 sudo podman run --rm \
   --entrypoint /usr/bin/bash \
-  family-bazzite:test \
+  precision-bluefin:test \
   -c 'rpm -q qemu-kvm libvirt-daemon-kvm virt-manager virt-install virt-viewer'
 ```
 
@@ -165,7 +165,7 @@ sudo podman run --rm \
 
 | Path | Purpose |
 | --- | --- |
-| [`Containerfile`](./Containerfile) | Selects the Bazzite base and runs the image build |
+| [`Containerfile`](./Containerfile) | Selects the Bluefin base and runs the image build |
 | [`build_files/build.sh`](./build_files/build.sh) | Installs packages, services, and dependencies |
 | [`system_files/`](./system_files) | Files copied into the immutable image |
 | [`vendor-backup/`](./vendor-backup) | Reference backup of the original Pantum configuration |
@@ -175,7 +175,7 @@ sudo podman run --rm \
 
 ## Implementation notes
 
-Bazzite and Fedora bootable images may normally make `/opt` a symlink into mutable `/var`. Brave and the Pantum vendor payload store application files under `/opt`, so the Containerfile creates a real immutable `/opt` directory before applying the customizations.
+Bluefin and Fedora bootable images may normally make `/opt` a symlink into mutable `/var`. Brave and the Pantum vendor payload store application files under `/opt`, so the Containerfile creates a real immutable `/opt` directory before applying the customizations.
 
 The temporary COPR used for `libjpeg8` is disabled again after package installation.
 
@@ -183,7 +183,7 @@ The temporary COPR used for `libjpeg8` is disabled again after package installat
 
 This image is built from and depends on:
 
-- [Bazzite](https://github.com/ublue-os/bazzite)
+- [Bluefin](https://github.com/ublue-os/bluefin)
 - [Universal Blue image-template](https://github.com/ublue-os/image-template)
 - [bootc](https://github.com/bootc-dev/bootc)
 
