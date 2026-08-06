@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Enable Precision Bluefin GNOME Extensions
+Comment=Apply Precision Bluefin desktop defaults on first login
+Exec=/usr/libexec/precision-bluefin-enable-extensions
+OnlyShowIn=GNOME;
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

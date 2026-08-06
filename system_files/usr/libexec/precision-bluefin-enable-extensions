@@ -1,0 +1,50 @@
+#!/usr/bin/bash
+
+set -uo pipefail
+
+state_home="${XDG_STATE_HOME:-${HOME}/.local/state}"
+state_dir="${state_home}/precision-bluefin"
+marker="${state_dir}/desktop-defaults-v1"
+
+if [[ -e "$marker" ]]; then
+    exit 0
+fi
+
+# Apply the preferred GNOME appearance for this workstation. These are normal
+# per-user settings and can be changed later through GNOME Settings or Tweaks.
+gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' || exit 0
+gsettings set org.gnome.desktop.interface icon-theme 'Gruvbox-Plus-Dark' || exit 0
+
+extensions=(
+    "tilingshell@ferrarodomenico.com"
+    "window-state-manager@kishorv06.github.io"
+)
+
+# The autostart entry normally runs after GNOME Shell starts, but retry for a
+# short period so a slow session does not leave the extensions disabled.
+for _ in $(seq 1 30); do
+    available="$(gnome-extensions list 2>/dev/null || true)"
+    failed=false
+
+    for uuid in "${extensions[@]}"; do
+        if ! grep -Fxq "$uuid" <<< "$available"; then
+            failed=true
+            continue
+        fi
+
+        if ! gnome-extensions enable "$uuid" >/dev/null 2>&1; then
+            failed=true
+        fi
+    done
+
+    if [[ "$failed" == false ]]; then
+        mkdir -p "$state_dir"
+        touch "$marker"
+        exit 0
+    fi
+
+    sleep 2
+done
+
+# Leave no marker after failure so the helper retries at the next login.
+exit 0

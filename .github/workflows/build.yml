@@ -1,0 +1,319 @@
+---
+name: Build signed Precision Bluefin image
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**/README.md"
+      - "**/*.md"
+  schedule:
+    # Check daily. Scheduled runs skip when this Bluefin release was built.
+    - cron: "15 13 * * *"
+  workflow_dispatch:
+
+env:
+  IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    name: Check current stable Bluefin NVIDIA image
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      packages: read
+
+    outputs:
+      should_build: ${{ steps.decision.outputs.should_build }}
+      release_id: ${{ steps.base.outputs.release_id }}
+      bluefin_image: ${{ steps.base.outputs.bluefin_image }}
+      image_name: ${{ steps.image.outputs.image_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install image inspection tool
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+
+      - name: Read image name
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          source image-template.env
+          image_name="${IMAGE_NAME,,}"
+          echo "image_name=${image_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect current Bluefin NVIDIA Open stable image
+        id: base
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base_name="ghcr.io/projectbluefin/bluefin-nvidia-open"
+          skopeo inspect "docker://${base_name}:stable" > /tmp/bluefin.json
+
+          digest="$(jq -r '.Digest // empty' /tmp/bluefin.json)"
+          base_version="$(jq -r '.Labels["org.opencontainers.image.version"] // .Labels["ostree.version"] // empty' /tmp/bluefin.json)"
+
+          if [[ -z "$digest" ]]; then
+            echo "Bluefin stable digest is missing."
+            exit 1
+          fi
+
+          if [[ -z "$base_version" ]]; then
+            echo "Bluefin stable version label is missing."
+            exit 1
+          fi
+
+          release_id="${base_version%.0}"
+          bluefin_image="${base_name}@${digest}"
+
+          echo "Bluefin stable version: ${base_version}"
+          echo "Custom release marker: ${release_id}"
+          echo "Pinned base image: ${bluefin_image}"
+
+          echo "release_id=${release_id}" >> "$GITHUB_OUTPUT"
+          echo "bluefin_image=${bluefin_image}" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether this run should build
+        id: decision
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.image_name }}
+          RELEASE_ID: ${{ steps.base.outputs.release_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Pushes, pull requests, and manual runs always build from the current
+          # exact digest behind Bluefin's stable tag.
+          if [[ "${GITHUB_EVENT_NAME}" != "schedule" ]]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          marker_image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}:upstream-${RELEASE_ID}"
+
+          if docker manifest inspect "$marker_image" >/dev/null 2>&1; then
+            echo "Bluefin release ${RELEASE_ID} was already built."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Bluefin release ${RELEASE_ID} is new for this custom image."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build_push:
+    name: Build, publish, sign, and release
+    needs: prepare
+    if: needs.prepare.outputs.should_build == 'true'
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+
+    env:
+      IMAGE_NAME: ${{ needs.prepare.outputs.image_name }}
+      RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
+      BLUEFIN_IMAGE: ${{ needs.prepare.outputs.bluefin_image }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Maximize build space
+        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6
+
+      - name: Install just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+
+      - name: Check Just syntax
+        run: just check
+
+      - name: Read default tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          source image-template.env
+          echo "DEFAULT_TAG=${DEFAULT_TAG}" >> "$GITHUB_ENV"
+          echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> "$GITHUB_ENV"
+
+      - name: Build pinned Bluefin stable image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sudo podman build \
+            --pull=newer \
+            --build-arg "BLUEFIN_IMAGE=${BLUEFIN_IMAGE}" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.description=Personal Bluefin NVIDIA workstation image" \
+            --label "org.opencontainers.image.version=${RELEASE_ID}" \
+            --label "io.iegorch86.bluefin.release=${RELEASE_ID}" \
+            --tag "${IMAGE_NAME}:${DEFAULT_TAG}" \
+            --file Containerfile \
+            .
+
+      - name: Rechunk image for resumable updates
+        shell: bash
+        run: |
+          sudo -E $(command -v just) ostree-rechunk \
+            "${IMAGE_NAME}" \
+            "${DEFAULT_TAG}"
+
+      - name: Generate image tags
+        id: tags
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          short_sha="${GITHUB_SHA::7}"
+          build_date="$(date -u +%Y%m%d)"
+
+          tags=(
+            "${DEFAULT_TAG}"
+            "upstream-${RELEASE_ID}"
+            "${DEFAULT_TAG}-${build_date}"
+            "${DEFAULT_TAG}-${short_sha}"
+            "${DEFAULT_TAG}-${build_date}-${short_sha}"
+          )
+
+          printf '%s\n' "${tags[@]}" | sort -u > /tmp/image-tags
+          echo "Tags:"
+          cat /tmp/image-tags
+
+      - name: Apply image tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_id="$(sudo podman inspect "${IMAGE_NAME}:${DEFAULT_TAG}" --format '{{.Id}}')"
+
+          while IFS= read -r tag; do
+            sudo podman tag "$image_id" "${IMAGE_NAME}:${tag}"
+          done < /tmp/image-tags
+
+      - name: Login to GitHub Container Registry
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push all tags to GHCR
+        id: push
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          authfile="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
+          test -r "$authfile"
+
+          while IFS= read -r tag; do
+            sudo podman push \
+              --authfile "$authfile" \
+              --digestfile=/tmp/digest \
+              "${IMAGE_NAME}:${tag}" \
+              "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}"
+          done < /tmp/image-tags
+
+          digest="$(cat /tmp/digest)"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "Published digest: ${digest}"
+
+      - name: Install Cosign
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.2
+
+      - name: Sign published image digest
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        env:
+          COSIGN_EXPERIMENTAL: false
+          COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        shell: bash
+        run: |
+          cosign sign -y \
+            --new-bundle-format=false \
+            --use-signing-config=false \
+            --key env://COSIGN_PRIVATE_KEY \
+            "${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST}"
+
+      - name: Publish GitHub release
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_tag="stable-${RELEASE_ID}"
+
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub Release ${release_tag} already exists."
+            exit 0
+          fi
+
+          cat > /tmp/release-notes.md <<EOF_NOTES
+          ## Precision Bluefin ${RELEASE_ID}
+
+          Personal Bluefin NVIDIA Open workstation image based on upstream Bluefin ${RELEASE_ID}.
+
+          ### Included customizations
+
+          - Brave Browser installed natively
+          - Gaze face authentication
+          - Pantum M6550NW printer and scanner support
+          - Native KVM/QEMU/libvirt virtualization
+          - Simple Scan and gscan2pdf document scanning tools
+          - Waydroid using its standard Fedora integration
+          - Tiling Shell and Window State Manager installed system-wide
+          - Gruvbox Plus Dark and Light icons installed system-wide
+          - Dark appearance and Gruvbox Plus Dark icons enabled by default
+          - Cosign-signed container image
+
+          ### Container images
+
+          Current stable image:
+
+          \`\`\`text
+          ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}:stable
+          \`\`\`
+
+          Release-specific image:
+
+          \`\`\`text
+          ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}:upstream-${RELEASE_ID}
+          \`\`\`
+
+          Published digest:
+
+          \`\`\`text
+          ${DIGEST}
+          \`\`\`
+          EOF_NOTES
+
+          gh release create "$release_tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "${RELEASE_ID}: Precision Bluefin Stable" \
+            --notes-file /tmp/release-notes.md \
+            --latest
