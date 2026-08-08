@@ -18,6 +18,9 @@ dnf5 install -y \
     jq \
     unzip
 
+/ctx/install-image-trust.sh \
+    "ghcr.io/iegorch86/precision-bluefin"
+
 dnf5 -y copr enable aflyhorse/libjpeg
 
 # Native applications, authentication, printing, scanning, and Waydroid.
@@ -29,7 +32,6 @@ dnf5 install -y \
     cups \
     cups-client \
     cups-filters \
-    system-config-printer \
     sane-backends \
     sane-backends-drivers-scanners \
     simple-scan \

@@ -135,6 +135,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Install image inspection tool
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+
       - name: Maximize build space
         uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6
 
@@ -227,14 +233,23 @@ jobs:
           while IFS= read -r tag; do
             sudo podman push \
               --authfile "$authfile" \
-              --digestfile=/tmp/digest \
               "${IMAGE_NAME}:${tag}" \
               "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}"
           done < /tmp/image-tags
 
-          digest="$(cat /tmp/digest)"
+          digest="$(
+            skopeo inspect \
+              --format '{{.Digest}}' \
+              "docker://${IMAGE_REGISTRY}/${IMAGE_NAME}:${DEFAULT_TAG}"
+          )"
+
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Invalid published digest: $digest"
+            exit 1
+          fi
+
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
-          echo "Published digest: ${digest}"
+          echo "Published registry digest: ${digest}"
 
       - name: Install Cosign
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
@@ -254,6 +269,21 @@ jobs:
             --new-bundle-format=false \
             --use-signing-config=false \
             --key env://COSIGN_PRIVATE_KEY \
+            "${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST}"
+
+      - name: Verify published image signature
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Verifying ${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST}"
+
+          cosign verify \
+            --new-bundle-format=false \
+            --key cosign.pub \
             "${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST}"
 
       - name: Publish GitHub release
