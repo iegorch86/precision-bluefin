@@ -7,6 +7,7 @@ ARG BLUEFIN_IMAGE=ghcr.io/ublue-os/bluefin-nvidia-open:stable
 FROM scratch AS ctx
 COPY build_files /
 COPY system_files /system_files
+COPY cosign.pub /cosign.pub
 
 # Current plain Bluefin NVIDIA Open workstation image.
 FROM ${BLUEFIN_IMAGE}
