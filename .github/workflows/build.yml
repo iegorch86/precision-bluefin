@@ -231,10 +231,25 @@ jobs:
           test -r "$authfile"
 
           while IFS= read -r tag; do
-            sudo podman push \
-              --authfile "$authfile" \
-              "${IMAGE_NAME}:${tag}" \
-              "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}"
+            delay=60
+
+            for attempt in 1 2 3 4; do
+              if sudo podman push \
+                --authfile "$authfile" \
+                "${IMAGE_NAME}:${tag}" \
+                "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}"; then
+                break
+              fi
+
+              if [[ "$attempt" -eq 4 ]]; then
+                echo "Failed to push ${tag} after ${attempt} attempts."
+                exit 1
+              fi
+
+              echo "Push of ${tag} failed. Waiting ${delay}s before retry..."
+              sleep "$delay"
+              delay=$((delay * 2))
+            done
           done < /tmp/image-tags
 
           digest="$(
