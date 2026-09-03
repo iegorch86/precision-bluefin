@@ -317,23 +317,153 @@ jobs:
             exit 0
           fi
 
-          cat > /tmp/release-notes.md <<EOF_NOTES
+          current_components="/tmp/precision-packages.json"
+          previous_components="/tmp/previous-precision-packages.json"
+          component_list="/tmp/precision-components.txt"
+          component_rows="/tmp/precision-component-rows.md"
+          component_notes="/tmp/precision-component-notes.md"
+
+          echo '{}' > "$current_components"
+          : > "$component_list"
+
+          add_component() {
+            local component="$1"
+            local version="$2"
+
+            jq \
+              --arg component "$component" \
+              --arg version "$version" \
+              '. + {($component): $version}' \
+              "$current_components" > "${current_components}.new"
+            mv "${current_components}.new" "$current_components"
+            printf '%s\n' "$component" >> "$component_list"
+          }
+
+          while IFS= read -r package; do
+            [[ -z "$package" || "$package" == \#* ]] && continue
+
+            version="$(
+              sudo podman run --rm \
+                --entrypoint /usr/bin/rpm \
+                "${IMAGE_NAME}:${DEFAULT_TAG}" \
+                -q --qf '%{VERSION}-%{RELEASE}' "$package" \
+                2>/dev/null || true
+            )"
+
+            if [[ -z "$version" ]]; then
+              echo "Tracked package not installed: ${package}"
+              continue
+            fi
+
+            add_component "$package" "$version"
+          done < build_files/release-packages.txt
+
+          while IFS='|' read -r component metadata; do
+            version="$(
+              sudo podman run --rm \
+                --entrypoint /usr/bin/jq \
+                "${IMAGE_NAME}:${DEFAULT_TAG}" \
+                -r '."version-name" // .version // empty | tostring' \
+                "$metadata" \
+                2>/dev/null || true
+            )"
+
+            if [[ -z "$version" ]]; then
+              echo "Unable to determine extension version: ${component}"
+              continue
+            fi
+
+            add_component "$component" "$version"
+          done <<'EOF_EXTENSIONS'
+          Tiling Shell|/usr/share/gnome-shell/extensions/tilingshell@ferrarodomenico.com/metadata.json
+          Window State Manager|/usr/share/gnome-shell/extensions/window-state-manager@kishorv06.github.io/metadata.json
+          EOF_EXTENSIONS
+
+          previous_release_tag="$(
+            gh api "repos/${GITHUB_REPOSITORY}/releases/latest" \
+              --jq .tag_name 2>/dev/null || true
+          )"
+
+          have_previous=false
+          if [[ -n "$previous_release_tag" ]]; then
+            mkdir -p /tmp/previous-precision-release
+            if gh release download "$previous_release_tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern precision-packages.json \
+              --dir /tmp/previous-precision-release >/dev/null 2>&1; then
+              cp /tmp/previous-precision-release/precision-packages.json "$previous_components"
+              have_previous=true
+            fi
+          fi
+
+          if [[ "$have_previous" == true ]]; then
+            : > "$component_rows"
+            changes=0
+
+            while IFS= read -r component; do
+              previous="$(jq -r --arg component "$component" '.[$component] // empty' "$previous_components")"
+              current="$(jq -r --arg component "$component" '.[$component] // empty' "$current_components")"
+
+              [[ "$previous" == "$current" ]] && continue
+
+              if [[ -z "$previous" && -n "$current" ]]; then
+                printf '| ✨ | `%s` |  | `%s` |\n' "$component" "$current" >> "$component_rows"
+              elif [[ -n "$previous" && -z "$current" ]]; then
+                printf '| ❌ | `%s` | `%s` |  |\n' "$component" "$previous" >> "$component_rows"
+              else
+                printf '| 🔄 | `%s` | `%s` | `%s` |\n' "$component" "$previous" "$current" >> "$component_rows"
+              fi
+
+              changes=$((changes + 1))
+            done < "$component_list"
+
+            {
+              echo '### Precision-layer component changes'
+              echo
+              if [[ "$changes" -eq 0 ]]; then
+                echo 'No tracked Precision-layer component versions changed since the previous Precision Bluefin release.'
+              else
+                echo '| | Component | Previous | New |'
+                echo '| --- | --- | --- | --- |'
+                cat "$component_rows"
+              fi
+            } > "$component_notes"
+          else
+            {
+              echo '### Precision-layer component versions'
+              echo
+              echo 'Initial component-version baseline for automated Precision Bluefin changelogs.'
+              echo
+              echo '| Component | Version |'
+              echo '| --- | --- |'
+
+              while IFS= read -r component; do
+                version="$(jq -r --arg component "$component" '.[$component] // empty' "$current_components")"
+                [[ -z "$version" ]] && continue
+                printf '| `%s` | `%s` |\n' "$component" "$version"
+              done < "$component_list"
+            } > "$component_notes"
+          fi
+
+          upstream_date="${RELEASE_ID#*.}"
+          upstream_date="${upstream_date%%.*}"
+          upstream_release_tag="stable-${upstream_date}"
+
+          gh api "repos/ublue-os/bluefin/releases/tags/${upstream_release_tag}" \
+            --jq .body > /tmp/upstream-release.md
+
+          awk '/^### How to rebase$/ { exit } { print }' \
+            /tmp/upstream-release.md > /tmp/upstream-changelog.md
+
+          {
+            cat <<EOF_NOTES
           ## Precision Bluefin ${RELEASE_ID}
 
           Personal Bluefin NVIDIA Open workstation image based on upstream Bluefin ${RELEASE_ID}.
 
-          ### Included customizations
-
-          - Brave Browser installed natively
-          - Gaze face authentication
-          - Pantum M6550NW printer and scanner support
-          - Native KVM/QEMU/libvirt virtualization
-          - Simple Scan and gscan2pdf document scanning tools
-          - Waydroid using its standard Fedora integration
-          - Tiling Shell and Window State Manager installed system-wide
-          - Gruvbox Plus Dark and Light icons installed system-wide
-          - Dark appearance and Gruvbox Plus Dark icons enabled by default
-          - Cosign-signed container image
+          EOF_NOTES
+            cat "$component_notes"
+            cat <<EOF_NOTES
 
           ### Container images
 
@@ -354,9 +484,22 @@ jobs:
           \`\`\`text
           ${DIGEST}
           \`\`\`
+
+          ---
+
+          ## Upstream Bluefin ${RELEASE_ID} changelog
+
           EOF_NOTES
+            cat /tmp/upstream-changelog.md
+            cat <<EOF_NOTES
+
+          > Upstream changelog imported automatically from the corresponding Universal Blue Bluefin release:
+          > https://github.com/ublue-os/bluefin/releases/tag/${upstream_release_tag}
+          EOF_NOTES
+          } > /tmp/release-notes.md
 
           gh release create "$release_tag" \
+            /tmp/precision-packages.json \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "${RELEASE_ID}: Precision Bluefin Stable" \

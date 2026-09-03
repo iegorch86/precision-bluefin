@@ -1,0 +1,12 @@
+# Precision Bluefin RPM packages shown in GitHub release changelogs.
+
+brave-browser
+
+gaze
+gaze-gui
+gaze-gnome-extension
+
+simple-scan
+gscan2pdf
+seahorse
+waydroid
