@@ -1,6 +1,6 @@
 # GitHub Actions normally replaces this moving tag with the exact digest that
 # it inspected before the build. Local builds may keep the default.
-ARG BLUEFIN_IMAGE=ghcr.io/ublue-os/bluefin-nvidia-open:stable
+ARG BLUEFIN_IMAGE=ghcr.io/ublue-os/bluefin-dx-nvidia-open:stable
 
 # Make build scripts and system files available without leaving them as a
 # separate repository directory in the finished image.

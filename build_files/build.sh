@@ -43,9 +43,6 @@ dnf5 install -y \
     libjpeg8 \
     libjpeg-turbo
 
-# Native KVM/QEMU/libvirt/virt-manager virtualization stack.
-dnf5 group install -y virtualization
-
 # Download the newest extensions.gnome.org releases that explicitly support
 # the GNOME Shell major version included in this Bluefin image.
 gnome_major="$(rpm -q --qf '%{VERSION}\n' gnome-shell | cut -d. -f1)"

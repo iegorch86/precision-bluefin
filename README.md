@@ -12,7 +12,7 @@ This is not a general-purpose distribution or an official Bluefin/Universal Blue
 ghcr.io/iegorch86/precision-bluefin:stable
 ```
 
-The image targets an NVIDIA-specific Bluefin image.
+The image targets an NVIDIA-specific Bluefin-DX image.
 
 ## Included customizations
 
@@ -53,19 +53,6 @@ The repository includes the vendor driver payload needed for the Pantum M6550NW 
 CUPS is enabled in the image. Scanner support is provided through SANE and Simple Scan.
 
 The `vendor-backup/` directory is retained only as a reference copy. It is not copied into the finished image.
-
-### Native virtualization
-
-The Fedora `virtualization` package group is installed directly into the image. This provides the native virtualization stack, including:
-
-- KVM/QEMU
-- libvirt modular daemons
-- virt-manager
-- virt-install
-- virt-viewer
-- SPICE and related QEMU components
-
-This is the native Fedora virtualization stack, not a Flatpak installation.
 
 ## Switching to the image
 
@@ -150,15 +137,6 @@ sudo podman build \
   --tag precision-bluefin:test \
   --file Containerfile \
   .
-```
-
-Confirm that the main native virtualization packages are present:
-
-```bash
-sudo podman run --rm \
-  --entrypoint /usr/bin/bash \
-  precision-bluefin:test \
-  -c 'rpm -q qemu-kvm libvirt-daemon-kvm virt-manager virt-install virt-viewer'
 ```
 
 ## Repository layout

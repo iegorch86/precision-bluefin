@@ -63,7 +63,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          base_name="ghcr.io/ublue-os/bluefin-nvidia-open"
+          base_name="ghcr.io/ublue-os/bluefin-dx-nvidia-open"
           skopeo inspect "docker://${base_name}:stable" > /tmp/bluefin.json
 
           digest="$(jq -r '.Digest // empty' /tmp/bluefin.json)"
