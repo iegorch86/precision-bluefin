@@ -1,6 +1,6 @@
 # Precision Bluefin
 
-[![Build signed precision Bluefin image](https://github.com/iegorch86/precision-bluefin/actions/workflows/build.yml/badge.svg)](https://github.com/iegorch86/precision-bluefin/actions/workflows/build.yml)
+[![Precision Bluefin](https://github.com/iegorch86/precision-bluefin/actions/workflows/build.yml/badge.svg)](https://github.com/iegorch86/precision-bluefin/actions/workflows/build.yml)
 
 A personal, signed Bluefin image for my workstation.
 
