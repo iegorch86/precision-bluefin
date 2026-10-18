@@ -1,5 +1,7 @@
 # Precision Bluefin
 
+Archive Switched to my personal [Niri Edition](https://github.com/highwaytoit/zirconium-hci) based on [Zirconium](https://github.com/zirconium-dev/zirconium)
+
 [![Precision Bluefin](https://github.com/iegorch86/precision-bluefin/actions/workflows/build.yml/badge.svg)](https://github.com/iegorch86/precision-bluefin/actions/workflows/build.yml)
 
 A personal, signed Bluefin image for my workstation.
